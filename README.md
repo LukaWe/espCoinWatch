@@ -138,6 +138,7 @@ This version is simpler but requires you to edit the code to change settings.
 
 The display shows information in the following format:
 
+```text
 +--------------------------+
 | BTC/USD Binance   [WiFi] |  <- Header: Pair + Provider
 |--------------------------|
@@ -147,6 +148,7 @@ The display shows information in the following format:
 |  ^ +2.45% 24h            |  <- Trend Arrow + 24h Change
 | Updated: 14:30 Uhr       |  <- Last Update Time
 +--------------------------+
+```
 
 indicators:
 - [WiFi]: Dot icon indicates connection status
