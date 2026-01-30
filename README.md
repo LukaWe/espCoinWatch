@@ -23,7 +23,7 @@ Two versions are included in this project:
 You can print a case to house the Wemos D1 Mini and OLED display.
 *   [D1 Mini Clone Case](https://www.thingiverse.com/thing:7284649) by **LukaWe**.
     *   Designed specifically to fit **D1 Mini clones** that are slightly larger or off-size compared to the original Wemos D1 Mini.
-    *   *License*: Check Thingiverse page for license details.
+    *   *License*: Creative Commons - Attribution - Non-Commercial.
 *   [Wemos D1 Mini Case](https://www.thingiverse.com/thing:2884823) by **Qrome**.
     *   Fits original Wemos D1 Mini boards.
     *   *License*: Creative Commons - Attribution - Non-Commercial.
