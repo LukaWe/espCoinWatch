@@ -9,6 +9,8 @@ Two versions are included in this project:
    Allows configuration via WiFi (phone/laptop). No coding changes needed.
 2. (Option B) Standard Version (btc_ticker.ino)
    Requires hardcoding WiFi credentials in the code.
+3. (Option C) Weather & Enhanced Ticker (btc_ticker_weather_websrv.ino)
+   Advanced version with 4 API sources, Weather Forecast (Temp/Humidity/Rain/Wind [Optional]), and Web Config.
 
 ## Supported Hardware
 | Component | Specification |
@@ -40,14 +42,17 @@ You can print a case to house the Wemos D1 Mini and OLED display.
 Note: Use 3.3V for the OLED power.
 
 ### Optional Factory Reset Button
-You can connect a momentary push button to perform a factory reset without a computer (Web Config Version only).
+Connect a momentary push button or TTP223 touch sensor to D5 (GPIO14).
 
-| Wemos D1 Mini | Momentary Button |
-|---------------|------------------|
-| D5 (GPIO14) | Pin 1 |
-| GND | Pin 2 |
+| Wemos D1 Mini | Button/TTP223 |
+|---------------|---------------|
+| D5 (GPIO14) | Signal/OUT |
+| GND | GND |
+| 3.3V | VCC (TTP223 only) |
 
-**Usage**: Hold the button for **10 seconds** to trigger the factory reset. A countdown will appear on the display.
+**Factory Reset**: Hold for 10 seconds. A countdown appears on display.
+
+**Note**: D5 can be reconfigured for Weather/BTC display in Touch Settings (see Option C).
 
 ---
 
@@ -138,6 +143,89 @@ This version is simpler but requires you to edit the code to change settings.
 
 ---
 
+## Option C: Weather & Enhanced Ticker
+File: btc_ticker_weather_websrv.ino
+
+The most advanced version, building on Option A but adding multi-API support and live weather data.
+
+### Extra Features
+- **4 Crypto API Sources**: Binance, CoinGecko, Coinbase, Kraken (Auto-failover).
+- **Live Weather**: Current temperature, humidity, rain chance, and wind speed (optional).
+- **City Presets**: Easy selection for major German cities or custom Lat/Lon.
+- **Customizable Cycles**: Set how long to show Price vs Weather screens.
+- **Detailed Config**: All new options available via the Web Config portal.
+
+### How to Use
+1. Upload `btc_ticker_weather_websrv.ino` to your ESP8266.
+2. Follow the **Setup Mode** instructions from Option A (connect to `BTC-Ticker-Setup`).
+3. In the config menu, you will see additional options:
+   - **API Source**: Choose your preferred price data source.
+   - **Weather Settings**: Enable weather, select city, or enter coordinates.
+   - **Screen Cycles**: Adjust duration (e.g., show Bitcoin for 120s, Weather for 10s).
+4. Save & Reboot.
+
+### Web Configuration Panel
+Once the device connects to your WiFi, you can change settings at any time without resetting:
+1. Find the device's IP address (check your router's client list or look at the Serial Monitor during boot).
+2. Open a web browser and enter the IP address (e.g., `http://192.168.1.105`).
+3. The configuration page is divided into collapsible sections:
+
+#### 1. Ticker Settings
+- **WiFi SSID/Password**: Your network credentials.
+- **Currency**: Fiat currency to display (EUR, USD, GBP, etc.).
+- **Cryptocurrency**: Coin to track (BTC, ETH, SOL, etc.).
+- **API Source**:
+  - `Auto`: Tries Binance -> CoinGecko -> Coinbase -> Kraken.
+  - Specific providers can be forced.
+- **Poll Interval**: How often to fetch price (default: 60000ms = 1 min).
+- **Time Format**: `DE` (24h) or `US` (12h AM/PM).
+
+#### 2. Alert Settings
+- **Alert Low/High**: Price thresholds (0 to disable).
+- **Alert Pattern**: Slow (1s), Fast (250ms), Strobe (50ms), or SOS.
+- **Alert Mode**: `Display Only`, `LED Only`, or `Both`.
+- **LED Pin**: GPIO pin for LED (default: 2/D4).
+- **LED Inverted**: Check for built-in LED (Active LOW).
+- **Alert Duration**: Stop after X seconds (0 = infinite).
+- **Flip Display**: Rotate screen 180 degrees.
+
+#### 3. Touch Settings
+- **Enable Touch Buttons**: Activates D0, D7, D8 for TTP223 modules.
+- **D5 = Weather Button (BTC default)**:
+  - Press D5 to show weather, returns to BTC after timeout.
+  - Disables Factory Reset on D5.
+- **D5 = BTC Button (Weather default)**:
+  - Weather always shown. Press D5 to show BTC temporarily.
+  - Disables Factory Reset on D5.
+- **Screen Timeout**: How long alternate screen stays after releasing D5 (0 = instant return).
+
+#### 4. Weather Settings
+- **Enable Weather Display**: Toggle weather screen on/off.
+- **Enable Wind Forecast**: Shows 4-grid layout with wind speed.
+- **City Preset**: Quick-fill lat/lon for major German cities.
+- **Custom Location Name**: Name shown on header (max 10 chars).
+- **Latitude/Longitude**: Coordinates for weather data.
+- **Screen Durations**:
+  - `BTC Screen Duration`: How long price is shown (default: 120s).
+  - `Weather Screen Duration`: How long weather is shown (default: 10s).
+- **Weather Poll Interval**: How often to update weather (default: 30 mins).
+- **Button Mode**:
+  - `Auto Cycle`: Switches between Price/Weather automatically.
+  - `Always Weather`: Shows weather permanently.
+  - `On-Demand`: Price default; button shows Weather for one cycle.
+  - `Button Press (no cycle)`: Manual control only via D5 button.
+
+#### 5. Security
+- **Web Password**: Set password for config page (username: `admin`).
+
+#### 6. Device Logs
+- **Show Logs**: Last 20 debug messages with auto-refresh.
+
+
+
+
+---
+
 ## Display Layout
 
 The display shows information in the following format:
@@ -159,12 +247,47 @@ indicators:
 - OLD: Appears in header if data is stale (API failure)
 - Provider: Shows Binance or CoinGecko
 
+## Weather Display Layouts
+
+When weather is enabled, two layout modes are available depending on whether Wind Forecast is active.
+
+### 1. Standard 3-Metric Layout (Wind Disabled)
+Vertical separation for Temperature, Humidity, and Rain Probability.
+
+```text
++--------------------------+
+| Berlin          [WiFi]   | <- City + Status
+|--------------------------|
+|   12C  |   45%  |   10%  |
+|        |        |        |
+|  Temp  |   Hum  |  Rain  |
+|        |        |        |
+|--------------------------|
+| Updated: 14:30           |
++--------------------------+
+```
+
+### 2. Grid 4-Metric Layout (Wind Enabled)
+2x2 Grid layout showing Wind data. NOTE: Footer is removed to save space.
+
+```text
++--------------------------+
+| Berlin             14:30 | <- City + Time (Header)
+|--------------------------|
+|      22C    |     45%    | <- Temp | Humidity
+|      Temp   |     Hum    |
+|                          |
+|      10%    |    12km    | <- Rain | Wind Speed
+|      Rain   |    Wind    |
++--------------------------+
+```
+
 ## API Information
 
 Primary Provider: Binance (USDT/EUR pairs)
 Secondary Provider: CoinGecko (Fallback)
 
-The device automatically switches to the secondary provider if the primary one fails.
+The device automatically switches to the next provider in line if the current one fails.
 
 ## Troubleshooting
 
