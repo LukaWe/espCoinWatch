@@ -97,7 +97,7 @@ const char API_COINGECKO_HOST[] PROGMEM = "api.coingecko.com";
 const char API_COINBASE_HOST[] PROGMEM = "api.coinbase.com";
 const char API_KRAKEN_HOST[] PROGMEM = "api.kraken.com";
 const char API_OPENMETEO_HOST[] PROGMEM = "api.open-meteo.com";
-WiFiClientSecure g_secureClient;
+// WiFiClientSecure removed to be used locally in fetchers
 
 // BTC Price state
 float g_currentPrice = 0.0f;
@@ -107,7 +107,9 @@ bool g_hasValidData = false;
 bool g_dataStale = false;
 unsigned long g_lastPollTime = 0;
 unsigned long g_lastSuccessTime = 0;
-uint8_t g_currentProvider = 0; // 0 = Binance, 1 = CoinGecko
+uint8_t g_currentProvider =
+    0; // 0 = Binance, 1 = CoinGecko, 2 = Coinbase, 3 = Kraken
+uint8_t g_lastSuccessfulProvider = 0;
 uint8_t g_consecutiveFailures = 0;
 
 // Weather state
@@ -1087,11 +1089,10 @@ bool fetchPriceBinance() {
            "https://api.binance.com/api/v3/ticker/24hr?symbol=%s%s",
            config.crypto, binanceCurrency);
 
-  g_secureClient.stop(); // Clean up previous connection state
-  g_secureClient.setInsecure();
-  http.begin(g_secureClient, url);
-  http.setTimeout(
-      5000); // 5s timeout to prevent WDT reset but allow SSL handshake
+  WiFiClientSecure secureClient;
+  secureClient.setInsecure();
+  http.begin(secureClient, url);
+  http.setTimeout(3000); // Reduced timeout
 
   int httpCode = http.GET();
   if (httpCode == HTTP_CODE_OK) {
@@ -1110,6 +1111,7 @@ bool fetchPriceBinance() {
         g_hasValidData = true;
         g_dataStale = false;
         g_lastSuccessTime = millis();
+        g_lastSuccessfulProvider = 0;
         DEBUG_PRINTF("[API] Binance OK: %.2f (%.2f%%)\n", g_currentPrice,
                      g_priceChange24h);
         return true;
@@ -1171,10 +1173,10 @@ bool fetchPriceCoinGecko() {
            "price?ids=%s&vs_currencies=%s&include_24hr_change=true",
            geckoId, currencyLower);
 
-  g_secureClient.stop();
-  g_secureClient.setInsecure();
-  http.begin(g_secureClient, url);
-  http.setTimeout(5000);
+  WiFiClientSecure secureClient;
+  secureClient.setInsecure();
+  http.begin(secureClient, url);
+  http.setTimeout(3000);
 
   int httpCode = http.GET();
   if (httpCode == HTTP_CODE_OK) {
@@ -1193,6 +1195,7 @@ bool fetchPriceCoinGecko() {
         g_hasValidData = true;
         g_dataStale = false;
         g_lastSuccessTime = millis();
+        g_lastSuccessfulProvider = 1;
         DEBUG_PRINTF("[API] CoinGecko OK: %.2f (%.2f%%)\n", g_currentPrice,
                      g_priceChange24h);
         return true;
@@ -1219,10 +1222,10 @@ bool fetchPriceCoinbase() {
   snprintf(url, sizeof(url), "https://api.coinbase.com/v2/prices/%s-%s/spot",
            config.crypto, config.currency);
 
-  g_secureClient.stop();
-  g_secureClient.setInsecure();
-  http.begin(g_secureClient, url);
-  http.setTimeout(5000);
+  WiFiClientSecure secureClient;
+  secureClient.setInsecure();
+  http.begin(secureClient, url);
+  http.setTimeout(3000);
 
   int httpCode = http.GET();
   if (httpCode == HTTP_CODE_OK) {
@@ -1238,6 +1241,7 @@ bool fetchPriceCoinbase() {
         g_hasValidData = true;
         g_dataStale = false;
         g_lastSuccessTime = millis();
+        g_lastSuccessfulProvider = 2;
         DEBUG_PRINTF("[API] Coinbase OK: %.2f\n", g_currentPrice);
         return true;
       }
@@ -1274,10 +1278,10 @@ bool fetchPriceKraken() {
   snprintf(url, sizeof(url), "https://api.kraken.com/0/public/Ticker?pair=%s",
            pair);
 
-  g_secureClient.stop();
-  g_secureClient.setInsecure();
-  http.begin(g_secureClient, url);
-  http.setTimeout(5000);
+  WiFiClientSecure secureClient;
+  secureClient.setInsecure();
+  http.begin(secureClient, url);
+  http.setTimeout(3000);
 
   int httpCode = http.GET();
   if (httpCode == HTTP_CODE_OK) {
@@ -1307,6 +1311,7 @@ bool fetchPriceKraken() {
             g_hasValidData = true;
             g_dataStale = false;
             g_lastSuccessTime = millis();
+            g_lastSuccessfulProvider = 3;
             DEBUG_PRINTF("[API] Kraken OK: %.2f (%.2f%%)\n", g_currentPrice,
                          g_priceChange24h);
             return true;
@@ -1397,20 +1402,41 @@ void fetchPrice() {
     }
     break;
 
-  default: // Auto (0): Binance first with full fallback
-    g_currentProvider = 0;
-    success = fetchPriceBinance();
-    if (!success) {
-      g_currentProvider = 1;
-      success = fetchPriceCoinGecko();
+  default: // Auto (0): Try last successful provider first, then fallback
+    uint8_t order[] = {0, 1, 2, 3}; // Default order
+
+    // Rotate order to put last successful first
+    if (g_lastSuccessfulProvider != 0) {
+      uint8_t first = g_lastSuccessfulProvider;
+      int j = 0;
+      order[j++] = first;
+      for (int i = 0; i < 4; i++) {
+        if (i != first)
+          order[j++] = i;
+      }
     }
-    if (!success) {
-      g_currentProvider = 2;
-      success = fetchPriceCoinbase();
-    }
-    if (!success) {
-      g_currentProvider = 3;
-      success = fetchPriceKraken();
+
+    for (int i = 0; i < 4; i++) {
+      g_currentProvider = order[i];
+      switch (g_currentProvider) {
+      case 0:
+        success = fetchPriceBinance();
+        break;
+      case 1:
+        success = fetchPriceCoinGecko();
+        break;
+      case 2:
+        success = fetchPriceCoinbase();
+        break;
+      case 3:
+        success = fetchPriceKraken();
+        break;
+      }
+      if (success)
+        break;
+      // Allow web server to breathe between failed attempts
+      server.handleClient();
+      yield();
     }
     break;
   }
@@ -1442,10 +1468,10 @@ bool fetchWeatherOpenMeteo() {
   DEBUG_PRINT(F("[Weather] URL: "));
   DEBUG_PRINTLN(url);
 
-  g_secureClient.stop();
-  g_secureClient.setInsecure();
-  http.begin(g_secureClient, url);
-  http.setTimeout(5000);
+  WiFiClientSecure secureClient;
+  secureClient.setInsecure();
+  http.begin(secureClient, url);
+  http.setTimeout(3000);
 
   int httpCode = http.GET();
   if (httpCode == HTTP_CODE_OK) {
@@ -1507,10 +1533,10 @@ bool fetchWeatherBrightSky() {
            "https://api.brightsky.dev/current_weather?lat=%.4f&lon=%.4f",
            config.weather_lat, config.weather_lon);
 
-  g_secureClient.stop();
-  g_secureClient.setInsecure();
-  http.begin(g_secureClient, url);
-  http.setTimeout(5000);
+  WiFiClientSecure secureClient;
+  secureClient.setInsecure();
+  http.begin(secureClient, url);
+  http.setTimeout(3000);
 
   int httpCode = http.GET();
   if (httpCode == HTTP_CODE_OK) {
@@ -1556,6 +1582,8 @@ void fetchWeather() {
 
   bool success = fetchWeatherOpenMeteo();
   if (!success) {
+    server.handleClient();
+    yield();
     success = fetchWeatherBrightSky();
   }
 
